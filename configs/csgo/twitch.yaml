@@ -1,0 +1,10 @@
+# Configuración para F2 de Twitch (Rainbow Six Siege)
+horizontal_range: 0.25        # Reducido porque el F2 tiene poco retroceso horizontal
+min_vertical: 10              # Fuerza mínima hacia abajo (el F2 sube MUCHO)
+max_vertical: 14              # Fuerza máxima hacia abajo (ajustado por alta cadencia)
+min_firerate: 0.006           # Tiempo entre correcciones (más rápido por la cadencia de 980 RPM)
+max_firerate: 0.012
+bonus_offset: 'random.uniform(-0.15, 0.15)'  # Variación mínima para parecer humano
+horizontal_offset: 'random.uniform(-0.3, 0.3)' # Poco desplazamiento horizontal
+vertical_offset: 'random.uniform(8, 12)'      # Rango vertical principal
+time_offset: 'random.uniform(0.006, 0.013)'   # Sincronización con cadencia del F2

@@ -1,0 +1,9 @@
+horizontal_range: 0.3
+min_vertical: 3
+max_vertical: 5
+min_firerate: 0.008
+max_firerate: 0.015
+bonus_offset: 'random.uniform(-0.2, 0.2)'
+horizontal_offset: 'random.uniform(-0.5, 0.5)'
+vertical_offset: 'random.uniform(5, 9)'
+time_offset: 'random.uniform(0.008, 0.015)'
