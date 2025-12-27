@@ -1,0 +1,8 @@
+descripcion: ''
+horizontal_range: 0.3
+incremento_progresivo: 0.1
+limite_incremento: 2.0
+max_firerate: 0.02
+max_vertical: 2.0
+min_firerate: 0.01
+min_vertical: 1.0
