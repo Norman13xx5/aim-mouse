@@ -1,0 +1,11 @@
+descripcion: 'Capitao - Attacker AR (PARA-308)'
+horizontal_range: 0.16
+recoil_intensity: 0.7
+min_vertical: 6
+max_vertical: 8
+min_firerate: 0.012
+max_firerate: 0.018
+bonus_offset: 'random.uniform(-0.2, 0.2)'
+horizontal_offset: 'random.uniform(-0.35, 0.35)'
+vertical_offset: 'random.uniform(5, 8)'
+time_offset: 'random.uniform(0.012, 0.018)'

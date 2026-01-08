@@ -1,0 +1,11 @@
+descripcion: 'Rook - Defender AR (MP7 Submachine Gun + P90)'
+horizontal_range: 0.1
+recoil_intensity: 0.7
+min_vertical: 3
+max_vertical: 5
+min_firerate: 0.005
+max_firerate: 0.009
+bonus_offset: 'random.uniform(-0.25, 0.25)'
+horizontal_offset: 'random.uniform(-0.4, 0.4)'
+vertical_offset: 'random.uniform(3, 5)'
+time_offset: 'random.uniform(0.005, 0.009)'

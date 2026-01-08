@@ -9,6 +9,9 @@ class InicioView:
         self.volver_callback = volver_callback
         self.config_manager = ConfigManager()
         
+        # Pasar config_manager al aim_controller para configs rápidas
+        aim_controller.config_manager = self.config_manager
+        
         # Cargar configuraciones disponibles dinámicamente
         self.opciones_dependientes = self.config_manager.get_available_configs()
         

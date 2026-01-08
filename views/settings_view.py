@@ -69,6 +69,9 @@ class SettingsView:
         
         self.start_hidden_var = ctk.BooleanVar(value=self.config["start_hidden"])
         self.always_on_top_var = ctk.BooleanVar(value=self.config["always_on_top"])
+        # Overlay settings (overlay_mode: topmost without stealing focus; overlay_clickthrough: click-through)
+        self.overlay_mode_var = ctk.BooleanVar(value=self.config.get("overlay_mode", False))
+        self.overlay_click_var = ctk.BooleanVar(value=self.config.get("overlay_clickthrough", False))
         
         ctk.CTkCheckBox(
             section,
@@ -84,6 +87,22 @@ class SettingsView:
             variable=self.always_on_top_var,
             font=("Arial", 12),
             command=self._on_always_on_top_change
+        ).pack(anchor="w", pady=5)
+
+        ctk.CTkCheckBox(
+            section,
+            text="Modo overlay (no robar foco)",
+            variable=self.overlay_mode_var,
+            font=("Arial", 12),
+            command=self._on_overlay_mode_change
+        ).pack(anchor="w", pady=5)
+
+        ctk.CTkCheckBox(
+            section,
+            text="Click-through (solo si overlay activo)",
+            variable=self.overlay_click_var,
+            font=("Arial", 12),
+            command=self._on_overlay_click_change
         ).pack(anchor="w", pady=5)
     
     def _create_sensitivity_section(self, parent):
@@ -140,6 +159,14 @@ class SettingsView:
     def _on_always_on_top_change(self):
         self.update_config("always_on_top", self.always_on_top_var.get())
         print(f"Ventana siempre encima: {'Activado' if self.always_on_top_var.get() else 'Desactivado'}")
+
+    def _on_overlay_mode_change(self):
+        self.update_config("overlay_mode", self.overlay_mode_var.get())
+        print(f"Overlay mode: {'Activado' if self.overlay_mode_var.get() else 'Desactivado'}")
+
+    def _on_overlay_click_change(self):
+        self.update_config("overlay_clickthrough", self.overlay_click_var.get())
+        print(f"Overlay click-through: {'Activado' if self.overlay_click_var.get() else 'Desactivado'}")
     
     def _on_sensitivity_change(self, value):
         int_value = int(float(value))

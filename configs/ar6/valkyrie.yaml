@@ -1,0 +1,11 @@
+descripcion: 'Valkyrie - Defender DMR (SPAS-12 + MPX)'
+horizontal_range: 0.12
+recoil_intensity: 0.7
+min_vertical: 5
+max_vertical: 7
+min_firerate: 0.012
+max_firerate: 0.018
+bonus_offset: 'random.uniform(-0.2, 0.2)'
+horizontal_offset: 'random.uniform(-0.35, 0.35)'
+vertical_offset: 'random.uniform(4, 7)'
+time_offset: 'random.uniform(0.012, 0.018)'

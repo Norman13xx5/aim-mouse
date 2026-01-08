@@ -2,6 +2,8 @@ import customtkinter as ctk
 from inicio import InicioView
 from aim_assist import aim_controller
 import keyboard
+import ctypes
+from ctypes import wintypes
 import sys
 import os
 
@@ -52,11 +54,38 @@ class WindowManager:
         
         if app.winfo_exists():
             if app.state() == 'withdrawn' or not app.winfo_viewable():
-                app.deiconify()
-                app.lift()
-                app.focus_force()
-                app.attributes('-topmost', True)
-                app.after(100, lambda: app.attributes('-topmost', False))
+                # Si overlay activo, mostrar sin activar (no robar foco)
+                if app.config.get('overlay_mode') and os.name == 'nt':
+                    try:
+                        hwnd = app.winfo_id()
+                        SW_SHOWNOACTIVATE = 4
+                        SWP_NOSIZE = 0x0001
+                        SWP_NOMOVE = 0x0002
+                        SWP_NOACTIVATE = 0x0010
+                        SWP_SHOWWINDOW = 0x0040
+                        HWND_TOPMOST = -1
+                        ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+                        ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE)
+                        # Asegurar estilos overlay aplicados
+                        try:
+                            app._apply_overlay_settings()
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        # Fallback normal
+                        app.deiconify()
+                        app.lift()
+                else:
+                    app.deiconify()
+                    app.lift()
+                    # Si no está en modo overlay, forzar foco de forma breve
+                    if not app.config.get('overlay_mode'):
+                        try:
+                            app.focus_force()
+                            app.attributes('-topmost', True)
+                            app.after(100, lambda: app.attributes('-topmost', False))
+                        except Exception:
+                            pass
                 print("📱 Ventana mostrada (Ctrl+B)")
             else:
                 app.withdraw()
@@ -159,6 +188,8 @@ class App(ctk.CTk):
         self.config = {
             "start_hidden": False,
             "always_on_top": False,
+            "overlay_mode": False,
+            "overlay_clickthrough": False,
             "global_sensitivity": 5
         }
         
@@ -197,6 +228,151 @@ class App(ctk.CTk):
         
         # Configurar atajo global
         self.hotkey_setup = HotkeyManager.setup_global_hotkey()
+        # Aplicar modo overlay si está configurado
+        # Ejecutar tras ventana creada
+        try:
+            self.after(200, self._apply_overlay_settings)
+        except Exception:
+            pass
+
+    def _apply_overlay_settings(self):
+        """Aplicar configuración de overlay (topmost + opcional click-through) en Windows."""
+        try:
+            if os.name != 'nt':
+                return
+
+            hwnd = self.winfo_id()
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            WS_EX_TRANSPARENT = 0x00000020
+            WS_EX_TOOLWINDOW = 0x00000080
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+
+            exstyle = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+
+            if self.config.get("overlay_mode"):
+                # Asegurar que esté siempre arriba pero no robe foco
+                ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE)
+                # Añadir estilos de layered y toolwindow (quita de Alt-Tab)
+                # Intentar añadir WS_EX_NOACTIVATE si disponible (algunas versiones de Windows)
+                WS_EX_NOACTIVATE = 0x04000000
+                new_style = exstyle | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+                if self.config.get("overlay_clickthrough"):
+                    new_style |= WS_EX_TRANSPARENT
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+                # Instalar hook para evitar activación por click, mouseactivate, setfocus
+                try:
+                    self._install_mouse_activate_hook(hwnd)
+                except Exception:
+                    pass
+            else:
+                # Quitar estilo click-through si estaba puesto y restaurar topmost según setting
+                new_style = exstyle & ~WS_EX_TRANSPARENT
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+                if self.config.get("always_on_top"):
+                    ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                else:
+                    ctypes.windll.user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                # Quitar hook si existe
+                try:
+                    self._remove_mouse_activate_hook(hwnd)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"No se pudo aplicar overlay settings: {e}")
+
+    def _install_mouse_activate_hook(self, hwnd):
+        """Sobrescribir WndProc para evitar activación por click.
+        Intercepta WM_MOUSEACTIVATE, WM_ACTIVATE, WM_SETFOCUS, WM_NCACTIVATE."""
+        if os.name != 'nt':
+            return
+
+        user32 = ctypes.windll.user32
+        GWL_WNDPROC = -4
+
+        # Definir tipos
+        WNDPROCTYPE = ctypes.WINFUNCTYPE(wintypes.LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+        # Si ya instalado, no reinstalar
+        if getattr(self, '_wndproc_ref', None) is not None:
+            return
+
+        def _wndproc(hWnd, msg, wParam, lParam):
+            # Códigos de mensajes para evitar activación
+            WM_ACTIVATE = 0x0006
+            WM_SETFOCUS = 0x0007
+            WM_NCACTIVATE = 0x0086
+            WM_MOUSEACTIVATE = 0x0021
+            
+            # WM_MOUSEACTIVATE: no activar pero procesar (MA_NOACTIVATE = 3)
+            if msg == WM_MOUSEACTIVATE:
+                return 3
+            # WM_ACTIVATE: si es activación, ignorar
+            if msg == WM_ACTIVATE:
+                if wParam != 0:  # Si es activación
+                    return 0  # Ignorar activación
+            # WM_SETFOCUS: ignorar completamente
+            if msg == WM_SETFOCUS:
+                return 0
+            # WM_NCACTIVATE: devolver TRUE sin activar frame no-cliente
+            if msg == WM_NCACTIVATE:
+                return 1
+            
+            # Para otros mensajes, llamar al procedimiento original si existe
+            orig = getattr(self, '_orig_wndproc', None)
+            if orig:
+                return user32.CallWindowProcW(orig, hWnd, msg, wParam, lParam)
+            return user32.DefWindowProcW(hWnd, msg, wParam, lParam)
+
+        wndproc = WNDPROCTYPE(_wndproc)
+
+        # Guardar referencia para evitar que el GC lo recoja
+        self._wndproc_ref = wndproc
+
+        # Establecer nuevo WndProc y guardar el anterior
+        try:
+            SetWindowLongPtr = user32.SetWindowLongPtrW
+        except AttributeError:
+            SetWindowLongPtr = user32.SetWindowLongW
+
+        prev = SetWindowLongPtr(hwnd, GWL_WNDPROC, ctypes.cast(wndproc, ctypes.c_void_p).value)
+        self._orig_wndproc = prev
+
+    def _remove_mouse_activate_hook(self, hwnd):
+        """Restaurar el WndProc original si fue reemplazado."""
+        if os.name != 'nt':
+            return
+        user32 = ctypes.windll.user32
+        GWL_WNDPROC = -4
+
+        orig = getattr(self, '_orig_wndproc', None)
+        if not orig:
+            return
+
+        try:
+            try:
+                SetWindowLongPtr = user32.SetWindowLongPtrW
+            except AttributeError:
+                SetWindowLongPtr = user32.SetWindowLongW
+
+            SetWindowLongPtr(hwnd, GWL_WNDPROC, orig)
+        except Exception:
+            pass
+
+        # Limpieza
+        try:
+            del self._orig_wndproc
+        except Exception:
+            pass
+        try:
+            del self._wndproc_ref
+        except Exception:
+            pass
     
     def _setup_icon(self):
         """Configurar icono de la ventana"""
@@ -214,142 +390,231 @@ class App(ctk.CTk):
                 break
     
     def _setup_menu(self):
-        """Configurar menú lateral"""
-        self.menu_frame = ctk.CTkFrame(self, width=220, corner_radius=0)
+        """Configurar menú lateral mejorado con diseño profesional"""
+        self.menu_frame = ctk.CTkFrame(self, width=260, corner_radius=0, fg_color="#0F172A")
         self.menu_frame.pack(side="left", fill="y")
         self.menu_frame.pack_propagate(False)
         
-        # Logo
+        # ===== ENCABEZADO ELEGANTE =====
+        header_frame = ctk.CTkFrame(self.menu_frame, fg_color="#1A1F3A", corner_radius=0)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        
+        # Logo principal
         logo_label = ctk.CTkLabel(
-            self.menu_frame,
-            text="Norman13xx5",
-            font=("Arial", 22, "bold"),
-            text_color=COLORS["INFO"]
+            header_frame,
+            text="🎯 AIM ASSIST",
+            font=("Arial", 16, "bold"),
+            text_color="#00D4FF"
         )
-        logo_label.pack(pady=(30, 20))
+        logo_label.pack(pady=18, padx=20)
         
-        # Separador
-        separator = ctk.CTkFrame(self.menu_frame, height=2, fg_color="gray")
-        separator.pack(fill="x", padx=20, pady=10)
+        # Subtítulo
+        subtitle = ctk.CTkLabel(
+            header_frame,
+            text="Control Anti-Recoil v2.0",
+            font=("Arial", 9),
+            text_color="#64748B"
+        )
+        subtitle.pack(pady=(0, 12), padx=20)
         
-        # Botones del menú
+        # Separador decorativo dual
+        ctk.CTkFrame(header_frame, height=1, fg_color="#00D4FF").pack(fill="x", padx=20)
+        ctk.CTkFrame(header_frame, height=1, fg_color="#1E40AF").pack(fill="x", padx=20, pady=10)
+        
+        # ===== ÁREA DE BOTONES =====
+        buttons_frame = ctk.CTkFrame(self.menu_frame, fg_color="transparent")
+        buttons_frame.pack(fill="both", expand=False, padx=15, pady=15)
+        
+        # Botones principales con mejor estilo
+        self.menu_buttons = {}
         menu_items = [
-            ("🎯 Anti-Recoil", self.show_aim_assist),
-            ("👥 Usuarios", self.show_users),
-            ("⚙️ Configuración", self.show_settings),
-            ("📝 Editor", self.show_editor),
+            ("🎯 Anti-Recoil", COLORS["PRIMARY"], self.show_aim_assist),
+            ("👥 Usuarios", COLORS["SECONDARY"], self.show_users),
+            ("⚙️ Configuración", COLORS["ACCENT"], self.show_settings),
+            ("📝 Editor", COLORS["INFO"], self.show_editor),
         ]
         
-        for text, command in menu_items:
+        for text, color, command in menu_items:
             btn = ctk.CTkButton(
-                self.menu_frame,
+                buttons_frame,
                 text=text,
+                font=("Arial", 11, "bold"),
+                fg_color=color,
+                hover_color=self._lighter_color(color),
+                text_color="white",
                 command=command,
-                fg_color=BUTTON_COLORS.get(text, COLORS["PRIMARY"]),
-                hover_color=COLORS["DARK"],
-                height=45,
-                font=("Arial", 14),
-                corner_radius=8
+                height=48,
+                corner_radius=10,
+                border_width=0,
+                cursor="hand2"
             )
-            btn.pack(pady=8, padx=20, fill="x")
+            btn.pack(fill="x", pady=6)
             self.menu_buttons[text] = btn
         
-        # Espaciador
-        ctk.CTkLabel(self.menu_frame, text="").pack(expand=True, fill="y")
+        # ===== SEPARADOR =====
+        ctk.CTkFrame(buttons_frame, height=1, fg_color="#1E293B", corner_radius=0).pack(fill="x", pady=15)
         
-        # Botón de ayuda de atajo
-        shortcut_btn = ctk.CTkButton(
-            self.menu_frame,
-            text="📋 Ctrl+B",
-            fg_color=COLORS["SECONDARY"],
-            hover_color="#560BAD",
-            height=35,
-            font=("Arial", 12),
-            corner_radius=6,
-            command=self.show_hotkey_info
+        # ===== SECCIÓN UTILIDADES =====
+        utils_label = ctk.CTkLabel(
+            buttons_frame,
+            text="UTILIDADES",
+            font=("Arial", 9, "bold"),
+            text_color="#64748B"
         )
-        shortcut_btn.pack(pady=10, padx=20, fill="x")
+        utils_label.pack(anchor="w", padx=5, pady=(10, 8))
         
-        # Botón salir
+        btn_hotkey = ctk.CTkButton(
+            buttons_frame,
+            text="⌨️ Hotkey (Ctrl+B)",
+            font=("Arial", 10),
+            fg_color="#1E293B",
+            hover_color="#334155",
+            text_color="#CBD5E1",
+            command=self.show_hotkey_info,
+            height=40,
+            corner_radius=8,
+            border_width=1,
+            border_color="#334155",
+            cursor="hand2"
+        )
+        btn_hotkey.pack(fill="x", pady=5)
+        
+        # ===== ESPACIADOR =====
+        ctk.CTkLabel(buttons_frame, text="").pack(expand=True, fill="y")
+        
+        # ===== BOTÓN SALIR =====
         exit_btn = ctk.CTkButton(
-            self.menu_frame,
-            text="❌ Salir",
+            buttons_frame,
+            text="❌ SALIR",
             fg_color=COLORS["DANGER"],
             hover_color="#EF233C",
             height=45,
-            font=("Arial", 14, "bold"),
-            corner_radius=8,
-            command=self.on_closing
+            font=("Arial", 12, "bold"),
+            corner_radius=10,
+            command=self.on_closing,
+            cursor="hand2"
         )
-        exit_btn.pack(pady=20, padx=20, fill="x")
+        exit_btn.pack(fill="x", pady=(15, 0))
     
     def _setup_content_area(self):
-        """Configurar área de contenido principal"""
-        self.content_frame = ctk.CTkFrame(self, corner_radius=10)
-        self.content_frame.pack(side="right", expand=True, fill="both", padx=20, pady=20)
+        """Configurar área de contenido principal mejorada"""
+        # Frame externo con gradiente visual
+        outer_frame = ctk.CTkFrame(self, fg_color="transparent")
+        outer_frame.pack(side="right", expand=True, fill="both", padx=0, pady=0)
         
-        # Frame para el título
-        self.title_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.title_frame.pack(pady=20)
+        # Fondo superior decorativo
+        top_bar = ctk.CTkFrame(outer_frame, height=8, fg_color="#00D4FF", corner_radius=0)
+        top_bar.pack(fill="x", padx=0, pady=0)
+        
+        # Frame principal con padding
+        self.content_frame = ctk.CTkFrame(outer_frame, fg_color="#0F172A", corner_radius=0)
+        self.content_frame.pack(expand=True, fill="both", padx=0, pady=0)
+        
+        # ===== ENCABEZADO CON ESTADO =====
+        header_frame = ctk.CTkFrame(self.content_frame, fg_color="#1A1F3A", height=80, corner_radius=0)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        header_frame.pack_propagate(False)
+        
+        left_header = ctk.CTkFrame(header_frame, fg_color="transparent")
+        left_header.pack(side="left", fill="both", expand=True, padx=25, pady=15)
         
         self.title_label = ctk.CTkLabel(
-            self.title_frame,
-            text="",
-            font=("Arial", 28, "bold")
+            left_header,
+            text="Bienvenido",
+            font=("Arial", 28, "bold"),
+            text_color="#00D4FF"
         )
-        self.title_label.pack()
+        self.title_label.pack(anchor="w")
         
         self.subtitle_label = ctk.CTkLabel(
-            self.title_frame,
-            text="",
-            font=("Arial", 14),
-            text_color="gray"
+            left_header,
+            text="Sistema Anti-Recoil Profesional",
+            font=("Arial", 11),
+            text_color="#64748B"
         )
-        self.subtitle_label.pack()
+        self.subtitle_label.pack(anchor="w", pady=(3, 0))
         
-        # Frame para contenido dinámico
+        # Estado en esquina derecha
+        right_header = ctk.CTkFrame(header_frame, fg_color="transparent")
+        right_header.pack(side="right", padx=25, pady=15)
+        
+        self.system_status_label = ctk.CTkLabel(
+            right_header,
+            text="● INACTIVO",
+            font=("Arial", 11, "bold"),
+            text_color="#EF4444"
+        )
+        self.system_status_label.pack()
+        
+        # Separador
+        ctk.CTkFrame(self.content_frame, height=1, fg_color="#1E293B").pack(fill="x")
+        
+        # ===== ÁREA DE CONTENIDO DINÁMICO =====
         self.dynamic_content = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.dynamic_content.pack(expand=True, fill="both", padx=20)
+        self.dynamic_content.pack(expand=True, fill="both", padx=30, pady=25)
     
     def _setup_footer(self):
-        """Configurar pie de página con estados"""
-        self.footer_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.footer_frame.pack(pady=10)
+        """Configurar pie de página mejorado con indicadores"""
+        self.footer_frame = ctk.CTkFrame(self.content_frame, fg_color="#1A1F3A", height=60, corner_radius=0)
+        self.footer_frame.pack(fill="x", padx=0, pady=0, side="bottom")
+        self.footer_frame.pack_propagate(False)
+        
+        # Contenedor con padding
+        footer_inner = ctk.CTkFrame(self.footer_frame, fg_color="transparent")
+        footer_inner.pack(fill="both", expand=True, padx=25, pady=12)
+        
+        # Estado del sistema
+        status_frame = ctk.CTkFrame(footer_inner, fg_color="transparent")
+        status_frame.pack(side="left", fill="x", expand=True)
+        
+        status_label = ctk.CTkLabel(
+            status_frame,
+            text="Estado del Sistema:",
+            font=("Arial", 10),
+            text_color="#64748B"
+        )
+        status_label.pack(side="left", padx=(0, 8))
         
         self.system_status = ctk.CTkLabel(
-            self.footer_frame,
-            text="Sistema: Inactivo",
-            font=("Arial", 12),
-            text_color="yellow"
+            status_frame,
+            text="🟡 Esperando...",
+            font=("Arial", 10, "bold"),
+            text_color="#FFD60A"
         )
-        self.system_status.pack(side="left", padx=10)
+        self.system_status.pack(side="left")
         
-        self.aim_status = ctk.CTkLabel(
-            self.footer_frame,
-            text="Aim Assist: Detenido",
-            font=("Arial", 12),
-            text_color="red"
-        )
-        self.aim_status.pack(side="left", padx=10)
+        # Separador vertical
+        ctk.CTkFrame(footer_inner, width=1, fg_color="#334155").pack(side="left", fill="y", padx=15)
         
-        self.hotkey_info_label = ctk.CTkLabel(
-            self.footer_frame,
-            text="Ctrl+B: Mostrar/Ocultar",
-            font=("Arial", 10),
-            text_color="gray"
+        # Info del hotkey
+        hotkey_label = ctk.CTkLabel(
+            footer_inner,
+            text="⌨️ Presiona Ctrl+B para mostrar/ocultar",
+            font=("Arial", 9),
+            text_color="#94A3B8"
         )
-        self.hotkey_info_label.pack(side="right", padx=10)
+        hotkey_label.pack(side="right")
     
     def _init_system(self):
         """Inicializar el sistema de aim assist"""
         try:
             aim_controller.start()
             print("✓ Sistema de aim assist iniciado en segundo plano")
-            self.system_status.configure(text="Sistema: Activo", text_color=COLORS["SUCCESS"])
             self._start_status_updates()
         except Exception as e:
             print(f"✗ Error al iniciar sistema: {e}")
-            self.system_status.configure(text="Sistema: Error", text_color=COLORS["DANGER"])
+    
+    def _handle_menu_click(self, button_label):
+        """Manejar clics en los botones del menú"""
+        actions = {
+            "🎯 Anti-Recoil": self.show_aim_assist,
+            "👥 Usuarios": self.show_users,
+            "⚙️ Configuración": self.show_settings,
+            "📝 Editor": self.show_editor,
+        }
+        
+        if button_label in actions:
+            actions[button_label]()
     
     # ================== MANEJO DE VISTAS ==================
     
@@ -394,65 +659,131 @@ class App(ctk.CTk):
         self.after(100, self._load_welcome_content)
     
     def _load_welcome_content(self):
-        """Cargar contenido de bienvenida"""
+        """Cargar contenido de bienvenida mejorado"""
         self.hide_loader()
         
-        welcome_frame = ctk.CTkFrame(self.dynamic_content, fg_color="transparent")
-        welcome_frame.pack(expand=True)
+        # Scroll frame
+        scroll_frame = ctk.CTkScrollableFrame(self.dynamic_content, fg_color="transparent")
+        scroll_frame.pack(fill="both", expand=True)
         
-        # Logo
-        logo_text = ctk.CTkLabel(welcome_frame, text="🎮", font=("Arial", 100))
-        logo_text.pack(pady=20)
-        
-        # Título principal
-        main_text = ctk.CTkLabel(
-            welcome_frame,
-            text="Control de Anti-Recoil para Rainbow Six Siege",
-            font=("Arial", 24, "bold")
+        # Tarjeta de bienvenida principal
+        welcome_card = ctk.CTkFrame(
+            scroll_frame,
+            fg_color="#1A1F3A",
+            corner_radius=15,
+            border_width=2,
+            border_color="#00D4FF"
         )
-        main_text.pack(pady=10)
+        welcome_card.pack(fill="x", pady=(0, 25), padx=0)
         
-        # Tarjeta de atajo
-        self._create_shortcut_card(welcome_frame)
+        # Icono principal
+        icon_label = ctk.CTkLabel(
+            welcome_card,
+            text="🎮",
+            font=("Arial", 60)
+        )
+        icon_label.pack(pady=(20, 10))
+        
+        # Título
+        welcome_title = ctk.CTkLabel(
+            welcome_card,
+            text="Bienvenido a AIM ASSIST",
+            font=("Arial", 26, "bold"),
+            text_color="#00D4FF"
+        )
+        welcome_title.pack(pady=(5, 3))
+        
+        # Subtítulo
+        welcome_subtitle = ctk.CTkLabel(
+            welcome_card,
+            text="Sistema Profesional de Control Anti-Recoil",
+            font=("Arial", 12),
+            text_color="#64748B"
+        )
+        welcome_subtitle.pack(pady=(0, 20))
+        
+        # Grid de características (2x2)
+        features_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        features_frame.pack(fill="x", pady=20)
+        
+        features = [
+            ("⚡ Ultra Rápido", "Compensación instantánea sin lag perceptible", "#1E40AF"),
+            ("🎯 Preciso", "Calibrado para máxima exactitud y control", "#1E3A8A"),
+            ("🔧 Configurable", "Ajusta parámetros según cada arma y distancia", "#1E40AF"),
+            ("🎨 Moderno", "Interfaz elegante e intuitiva para todos", "#1E3A8A")
+        ]
+        
+        for i, (title, desc, color) in enumerate(features):
+            if i % 2 == 0:
+                row_frame = ctk.CTkFrame(features_frame, fg_color="transparent")
+                row_frame.pack(fill="x", padx=20, pady=10)
+            
+            feature_card = ctk.CTkFrame(
+                row_frame,
+                fg_color=color,
+                corner_radius=10,
+                border_width=1,
+                border_color="#334155",
+                height=100
+            )
+            feature_card.pack(side="left" if i % 2 == 0 else "right", fill="both", expand=True, padx=(0 if i % 2 == 0 else 10, 10))
+            feature_card.pack_propagate(False)
+            
+            ft_title = ctk.CTkLabel(
+                feature_card,
+                text=title,
+                font=("Arial", 12, "bold"),
+                text_color="#00D4FF"
+            )
+            ft_title.pack(pady=(12, 3), padx=15, anchor="w")
+            
+            ft_desc = ctk.CTkLabel(
+                feature_card,
+                text=desc,
+                font=("Arial", 10),
+                text_color="#94A3B8",
+                wraplength=180,
+                justify="left"
+            )
+            ft_desc.pack(pady=(0, 12), padx=15, anchor="w")
+        
+        # Atajos rápidos
+        self._create_shortcut_card(scroll_frame)
         
         # Instrucciones
-        self._create_instructions_section(welcome_frame)
-        
-        # Advertencia
-        warning = ctk.CTkLabel(
-            welcome_frame,
-            text="⚠️ Usar únicamente en servidores privados o modo práctica",
-            font=("Arial", 11),
-            text_color="orange"
-        )
-        warning.pack(pady=20)
+        self._create_instructions_section(scroll_frame)
     
     def _create_shortcut_card(self, parent):
-        """Crear tarjeta de atajo de teclado"""
+        """Crear tarjeta de atajo de teclado mejorada"""
         shortcut_frame = ctk.CTkFrame(
             parent,
-            corner_radius=10,
-            fg_color="#1E40AF",
+            corner_radius=12,
+            fg_color="transparent",
             border_width=2,
-            border_color="#3B82F6"
+            border_color="#00D4FF"
         )
-        shortcut_frame.pack(pady=20, padx=50, fill="x")
+        shortcut_frame.pack(pady=25, padx=20, fill="x")
+        
+        # Fondo del contenido
+        bg_frame = ctk.CTkFrame(shortcut_frame, fg_color="#1E40AF", corner_radius=10)
+        bg_frame.pack(fill="both", expand=True, padx=3, pady=3)
         
         shortcut_text = ctk.CTkLabel(
-            shortcut_frame,
-            text="🎯 ATALLO RÁPIDO: Ctrl + B",
-            font=("Arial", 18, "bold"),
+            bg_frame,
+            text="⌨️  ATAJO RÁPIDO: Ctrl + B",
+            font=("Arial", 16, "bold"),
             text_color="white"
         )
         shortcut_text.pack(pady=15)
         
         shortcut_desc = ctk.CTkLabel(
-            shortcut_frame,
-            text="Presiona Ctrl+B en cualquier momento para mostrar/ocultar esta ventana",
-            font=("Arial", 12),
-            text_color="#BFDBFE"
+            bg_frame,
+            text="Presiona Ctrl+B en cualquier momento para mostrar/ocultar esta ventana sin perder el enfoque en el juego",
+            font=("Arial", 11),
+            text_color="#BFDBFE",
+            wraplength=400
         )
-        shortcut_desc.pack(pady=(0, 15))
+        shortcut_desc.pack(pady=(0, 15), padx=20)
     
     def _create_instructions_section(self, parent):
         """Crear sección de instrucciones"""
@@ -581,6 +912,22 @@ class App(ctk.CTk):
         """Iniciar actualizaciones periódicas del estado"""
         self._update_status()
     
+    def _lighter_color(self, hex_color):
+        """Generar versión más clara de un color hex"""
+        if hex_color.startswith("#"):
+            hex_color = hex_color[1:]
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        lighter_rgb = tuple(min(int(c * 1.3), 255) for c in rgb)
+        return "#{:02x}{:02x}{:02x}".format(*lighter_rgb)
+    
+    def _darker_color(self, hex_color):
+        """Generar versión más oscura de un color hex"""
+        if hex_color.startswith("#"):
+            hex_color = hex_color[1:]
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        darker_rgb = tuple(int(c * 0.7) for c in rgb)
+        return "#{:02x}{:02x}{:02x}".format(*darker_rgb)
+    
     def _update_status(self):
         """Actualizar estado del sistema"""
         if not self.winfo_exists():
@@ -589,26 +936,22 @@ class App(ctk.CTk):
         try:
             # Actualizar estado del aim assist
             if aim_controller.enabled:
-                self.aim_status.configure(
-                    text="Aim Assist: ACTIVO (Num Lock)",
-                    text_color=COLORS["SUCCESS"]
+                self.system_status_label.configure(
+                    text="● ACTIVO",
+                    text_color="#4ADE80"
+                )
+                self.system_status.configure(
+                    text="🟢 Aim Assist en funcionamiento",
+                    text_color="#4ADE80"
                 )
             else:
-                self.aim_status.configure(
-                    text="Aim Assist: INACTIVO (Presiona Num Lock)",
-                    text_color=COLORS["DANGER"]
+                self.system_status_label.configure(
+                    text="● INACTIVO",
+                    text_color="#EF4444"
                 )
-            
-            # Actualizar estado de visibilidad
-            if self.state() == 'withdrawn' or not self.winfo_viewable():
-                self.hotkey_info_label.configure(
-                    text="Ctrl+B: Mostrar ventana",
-                    text_color="yellow"
-                )
-            else:
-                self.hotkey_info_label.configure(
-                    text="Ctrl+B: Ocultar ventana",
-                    text_color="gray"
+                self.system_status.configure(
+                    text="🔴 Presiona Num Lock para activar",
+                    text_color="#EF4444"
                 )
         except Exception as e:
             print(f"Error en actualización de estado: {e}")
@@ -621,6 +964,12 @@ class App(ctk.CTk):
     def update_config(self, key, value):
         """Actualizar configuración"""
         self.config[key] = value
+        # Si cambiamos opciones relacionadas con overlay, reaplicar estilos
+        if key in ("overlay_mode", "overlay_clickthrough", "always_on_top"):
+            try:
+                self._apply_overlay_settings()
+            except Exception:
+                pass
     
     def on_closing(self):
         """Manejar cierre de la aplicación"""

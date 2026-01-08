@@ -1,0 +1,11 @@
+descripcion: 'Fuze - Attacker LMG (6P41 Light Machine Gun)'
+horizontal_range: 0.18
+recoil_intensity: 0.7
+min_vertical: 7
+max_vertical: 10
+min_firerate: 0.006
+max_firerate: 0.01
+bonus_offset: 'random.uniform(-0.25, 0.25)'
+horizontal_offset: 'random.uniform(-0.4, 0.4)'
+vertical_offset: 'random.uniform(7, 10)'
+time_offset: 'random.uniform(0.006, 0.01)'

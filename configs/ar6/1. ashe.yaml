@@ -1,0 +1,9 @@
+descripcion: 'Ash - R4-C (Bajo retroceso horizontal)'
+horizontal_range: 0.08
+recoil_intensity: 0.7
+incremento_progresivo: 0.1
+limite_incremento: 2.0
+max_firerate: 0.015
+max_vertical: 9.0
+min_firerate: 0.008
+min_vertical: 7.0

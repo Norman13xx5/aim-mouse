@@ -1,0 +1,11 @@
+descripcion: 'Glaz - Attacker Sniper (OTs-03)'
+horizontal_range: 0.05
+recoil_intensity: 0.7
+min_vertical: 1
+max_vertical: 2
+min_firerate: 0.1
+max_firerate: 0.15
+bonus_offset: 'random.uniform(-0.1, 0.1)'
+horizontal_offset: 'random.uniform(-0.1, 0.1)'
+vertical_offset: 'random.uniform(1, 2)'
+time_offset: 'random.uniform(0.1, 0.15)'

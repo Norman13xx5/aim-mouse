@@ -1,6 +1,7 @@
-horizontal_range: 0.3
-min_vertical: 2
-max_vertical: 3
+horizontal_range: 0.08
+recoil_intensity: 0.7
+min_vertical: 1
+max_vertical: 2
 min_firerate: 0.01
 max_firerate: 0.02
 bonus_offset: 'random.uniform(-0.2, 0.2)'

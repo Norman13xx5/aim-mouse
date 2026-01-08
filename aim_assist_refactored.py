@@ -24,6 +24,7 @@ class KeyManager:
             is_pressed = keyboard.is_pressed(key)
             was_pressed = self.last_states.get(key, False)
             
+            # Callback solo en transición de soltar a presionar
             if is_pressed and not was_pressed:
                 callback()
             
@@ -31,7 +32,7 @@ class KeyManager:
 
 
 class PresetManager:
-    """Gestor de presets (distancia, operadores, configs)"""
+    """Gestor de presets (distancia, operadores, etc)"""
     def __init__(self):
         self.distance_presets = {
             '1': (0.4, 'CORTA (30m)'),
@@ -69,12 +70,11 @@ class AimAssistController:
         self.presets = PresetManager()
         self.keys = KeyManager()
         
-        # Estado
+        # Estado de entrada
         self.is_aiming = False
         self.is_reloading = False
         self.last_distance_preset = None
         self.aim_start_time = 0
-        self.reload_start_time = 0
         
         # Configuración
         self.first_shot_intensity = 0.3
@@ -91,9 +91,9 @@ class AimAssistController:
         self.overlay_callback = None
         
         self._setup_keybinds()
-        
+    
     def _setup_keybinds(self):
-        """Configurar todos los atajos de teclado"""
+        """Configurar todos los atajos"""
         # Intensidad
         self.keys.register_key('+', lambda: self._adjust_intensity(+1))
         self.keys.register_key('-', lambda: self._adjust_intensity(-1))
@@ -114,17 +114,7 @@ class AimAssistController:
         # Estadísticas
         self.keys.register_key('p', lambda: self._print_stats())
     
-    def _print_stats(self):
-        """Mostrar estadísticas de sesión"""
-        elapsed = (datetime.now() - self.session_start).total_seconds()
-        minutes, seconds = int(elapsed // 60), int(elapsed % 60)
-        avg_bullets = (self.total_shots / self.total_bursts) if self.total_bursts > 0 else 0
-        
-        print(f"\n📊 SESIÓN:")
-        print(f"  Operador: {self.current_operator or 'N/A'}")
-        print(f"  Disparos: {self.total_shots} | Ráfagas: {self.total_bursts}")
-        print(f"  Promedio: {avg_bullets:.1f} balas/ráfaga")
-        print(f"  Tiempo: {minutes}m {seconds}s | Intensidad: {self.current_intensity:.0%}\n")
+    def _adjust_intensity(self, direction: int):
         """Ajustar intensidad (+/-)"""
         delta = self.intensity_step * direction
         self.current_intensity = max(0.1, min(1.0, self.current_intensity + delta))
@@ -175,7 +165,7 @@ class AimAssistController:
         print(f"  Disparos: {self.total_shots} | Ráfagas: {self.total_bursts}")
         print(f"  Promedio: {avg_bullets:.1f} balas/ráfaga")
         print(f"  Tiempo: {minutes}m {seconds}s | Intensidad: {self.current_intensity:.0%}\n")
-        
+    
     def set_config(self, weapon_cfg: Dict[str, Any]):
         """Establecer configuración del arma"""
         self.current_config = weapon_cfg
@@ -185,10 +175,6 @@ class AimAssistController:
         vert_min = weapon_cfg.get('min_vertical', 0)
         vert_max = weapon_cfg.get('max_vertical', 0)
         print(f"⚙️ Config: Horiz={horiz} | Vertical=[{vert_min}, {vert_max}]")
-        
-    def load_operator_profile(self, operator_key: str):
-        """Método legacy para compatibilidad"""
-        self._load_operator(operator_key)
     
     def write_mouse(self, dx: float, dy: float):
         """Simular movimiento del mouse"""
@@ -198,12 +184,10 @@ class AimAssistController:
         except Exception as e:
             print(f"❌ Error mouse: {e}")
     
-    def is_mouse_down(self):
-        """Verificar si botón izquierdo está presionado"""
+    def is_mouse_down(self) -> bool:
         return win32api.GetKeyState(0x01) < 0
     
-    def is_right_mouse_down(self):
-        """Verificar si botón derecho está presionado"""
+    def is_right_mouse_down(self) -> bool:
         return win32api.GetKeyState(0x02) < 0
     
     def aim_assist_loop(self):
@@ -342,5 +326,6 @@ class AimAssistController:
         self.enabled = state if state is not None else not self.enabled
         print(f"{'✅' if self.enabled else '❌'} Aim Assist {'activado' if self.enabled else 'desactivado'}")
 
-# Instancia global para usar en toda la aplicación
+
+# Instancia global
 aim_controller = AimAssistController()

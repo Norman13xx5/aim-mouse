@@ -51,8 +51,25 @@ python main.py
 
 | Tecla/Acción | Función |
 |--------------|---------|
-| **Ctrl + B** | Mostrar/Ocultar ventana |
-| **Num Lock** | Activar/Desactivar Anti-Recoil en juego |
+| **Num Lock** | Activar/Desactivar Anti-Recoil |
+| **[1]** | Corta distancia (40% retroceso) |
+| **[2]** | Media distancia (70% retroceso) |
+| **[3]** | Larga distancia (95% retroceso) |
+| **[+]** | Aumentar intensidad retroceso |
+| **[-]** | Reducir intensidad retroceso |
+| **[*]** numpad | Reset a 70% (default) |
+| **[Space]** | Zoom automático (-40% retroceso) |
+| **[F1]** | Operador: Ash (R4-C) |
+| **[F2]** | Operador: Twitch (F2) |
+| **[F3]** | Operador: Jäger (416-C) |
+| **[F4]** | Operador: IQ (552 Commando) |
+| **[F5]** | Operador: Ela (Scorpion) |
+| **[F6]** | Operador: Rook (MP5) |
+| **[F7]** | 📁 Config rápida: 2. attack.yaml |
+| **[F8]** | 📁 Config rápida: 3. defense.yaml |
+| **[P]** | Mostrar estadísticas de sesión |
+| **[E]** | ✅ LIBRE (voltear mira) |
+| **[R]** | ✅ LIBRE (recargar) |
 | **Click Derecho** | Mantener para apuntar |
 | **Click Izquierdo** | Disparar (aplica anti-recoil automático) |
 
@@ -102,7 +119,12 @@ max_firerate: 0.02
 ✅ Anti-recoil automático para Rainbow Six Siege  
 ✅ Interfaz gráfica intuitiva (Dark Mode)  
 ✅ Múltiples configuraciones por arma  
-✅ Atajo global Ctrl+B para mostrar/ocultar  
+✅ **Presets por distancia** (corta, media, larga)  
+✅ **Perfiles automáticos de operadores** (A, T, J, I, E, R)  
+✅ **Zoom automático** (reduce retroceso en ADS)  
+✅ **Detección de primera bala** (precisión mejorada)  
+✅ **Pausa automática en recarga**  
+✅ **Estadísticas de sesión en tiempo real**  
 ✅ Toggle con Num Lock durante el juego  
 ✅ Ejecución en segundo plano  
 ✅ Controles por click derecho + izquierdo  

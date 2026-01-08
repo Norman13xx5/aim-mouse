@@ -1,0 +1,11 @@
+descripcion: 'Alibi - Defender SMG (Mx4 Storm)'
+horizontal_range: 0.18
+recoil_intensity: 0.7
+min_vertical: 2
+max_vertical: 3
+min_firerate: 0.005
+max_firerate: 0.009
+bonus_offset: 'random.uniform(-0.2, 0.2)'
+horizontal_offset: 'random.uniform(-0.45, 0.45)'
+vertical_offset: 'random.uniform(2, 3.5)'
+time_offset: 'random.uniform(0.005, 0.009)'
